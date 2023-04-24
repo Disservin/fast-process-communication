@@ -8,22 +8,20 @@
 
 #ifndef _WIN64
 #include <errno.h>
-#include <fcntl.h> // fcntl
-#include <poll.h>  // poll
+#include <fcntl.h>  // fcntl
+#include <poll.h>   // poll
 #include <signal.h>
 #include <string.h>
-#include <sys/types.h> // pid_t
+#include <sys/types.h>  // pid_t
 #include <sys/wait.h>
-#include <unistd.h> // _exit, fork
+#include <unistd.h>  // _exit, fork
 #endif
 
-namespace Communication
-{
+namespace Communication {
 
 #ifdef _WIN64
 
-void Process::initProcess(const std::string &command)
-{
+void Process::initProcess(const std::string &command) {
     pi_ = PROCESS_INFORMATION();
 
     is_initalized_ = true;
@@ -43,8 +41,8 @@ void Process::initProcess(const std::string &command)
     SetHandleInformation(childStdInWr, HANDLE_FLAG_INHERIT, 0);
     si.hStdInput = childStdInRd;
 
-    CreateProcessA(nullptr, const_cast<char *>(command.c_str()), nullptr, nullptr, TRUE, 0, nullptr, nullptr, &si,
-                   &pi_);
+    CreateProcessA(nullptr, const_cast<char *>(command.c_str()), nullptr, nullptr, TRUE, 0, nullptr,
+                   nullptr, &si, &pi_);
 
     CloseHandle(childStdOutWr);
     CloseHandle(childStdInRd);
@@ -53,30 +51,23 @@ void Process::initProcess(const std::string &command)
     child_std_in_ = childStdInWr;
 }
 
-void Process::closeHandles()
-{
+void Process::closeHandles() {
     assert(is_initalized_);
-    try
-    {
+    try {
         CloseHandle(pi_.hThread);
         CloseHandle(pi_.hProcess);
 
         CloseHandle(child_std_out_);
         CloseHandle(child_std_in_);
-    }
-    catch (const std::exception &e)
-    {
+    } catch (const std::exception &e) {
         std::cerr << e.what();
     }
 }
 
-Process::~Process()
-{
-    killProcess();
-}
+Process::~Process() { killProcess(); }
 
-std::vector<std::string> Process::readProcess(std::string_view last_word, int64_t timeoutThreshold)
-{
+std::vector<std::string> Process::readProcess(std::string_view last_word,
+                                              int64_t timeout_threshold) {
     assert(is_initalized_);
 
     std::vector<std::string> lines;
@@ -95,25 +86,22 @@ std::vector<std::string> Process::readProcess(std::string_view last_word, int64_
 
     auto start = std::chrono::high_resolution_clock::now();
 
-    while (true)
-    {
+    while (true) {
         // Check if timeout milliseconds have elapsed
-        if (timeoutThreshold > 0 && checkTime-- == 0)
-        {
+        if (timeout_threshold > 0 && checkTime-- == 0) {
             /* To achieve "non blocking" file reading on windows with anonymous pipes the only
             solution that I found was using peeknamedpipe however it turns out this function is
             terribly slow and leads to timeouts for the engines. Checking this only after n runs
-            seems to reduce the impact of this. For high concurrency windows setups timeoutThreshold
-            should probably be 0. Using the assumption that the engine works rather clean and is
-            able to send the last word.*/
-            if (!PeekNamedPipe(child_std_out_, nullptr, 0, nullptr, &bytesAvail, nullptr))
-            {
+            seems to reduce the impact of this. For high concurrency windows setups
+            timeout_threshold should probably be 0. Using the assumption that the engine works
+            rather clean and is able to send the last word.*/
+            if (!PeekNamedPipe(child_std_out_, nullptr, 0, nullptr, &bytesAvail, nullptr)) {
                 break;
             }
 
-            if (std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::high_resolution_clock::now() - start)
-                    .count() > timeoutThreshold)
-            {
+            if (std::chrono::duration_cast<std::chrono::milliseconds>(
+                    std::chrono::high_resolution_clock::now() - start)
+                    .count() > timeout_threshold) {
                 lines.emplace_back(currentLine);
                 timeout_ = true;
                 break;
@@ -123,28 +111,22 @@ std::vector<std::string> Process::readProcess(std::string_view last_word, int64_
         }
 
         // no new bytes to read
-        if (timeoutThreshold > 0 && bytesAvail == 0)
-            continue;
+        if (timeout_threshold > 0 && bytesAvail == 0) continue;
 
-        if (!ReadFile(child_std_out_, buffer, sizeof(buffer), &bytesRead, nullptr))
-        {
+        if (!ReadFile(child_std_out_, buffer, sizeof(buffer), &bytesRead, nullptr)) {
             break;
         }
 
         // Iterate over each character in the buffer
-        for (DWORD i = 0; i < bytesRead; i++)
-        {
+        for (DWORD i = 0; i < bytesRead; i++) {
             // If we encounter a newline, add the current line to the vector and reset the
             // currentLine on windows newlines are \r\n
-            if (buffer[i] == '\n' || buffer[i] == '\r')
-            {
+            if (buffer[i] == '\n' || buffer[i] == '\r') {
                 // dont add empty lines
-                if (!currentLine.empty())
-                {
+                if (!currentLine.empty()) {
                     lines.emplace_back(currentLine);
 
-                    if (currentLine.rfind(last_word, 0) == 0)
-                    {
+                    if (currentLine.rfind(last_word, 0) == 0) {
                         return lines;
                     }
 
@@ -152,8 +134,7 @@ std::vector<std::string> Process::readProcess(std::string_view last_word, int64_
                 }
             }
             // Otherwise, append the character to the current line
-            else
-            {
+            else {
                 currentLine += buffer[i];
             }
         }
@@ -162,127 +143,102 @@ std::vector<std::string> Process::readProcess(std::string_view last_word, int64_
     return lines;
 }
 
-void Process::writeProcess(const std::string &input)
-{
+void Process::writeProcess(const std::string &input) {
     assert(is_initalized_);
 
-    if (!isAlive())
-    {
+    if (!isAlive()) {
         closeHandles();
 
-        throw std::runtime_error("Engine process is not alive and write occured with message: " + input);
+        throw std::runtime_error("Engine process is not alive and write occured with message: " +
+                                 input);
     }
 
     DWORD bytesWritten;
     WriteFile(child_std_in_, input.c_str(), input.length(), &bytesWritten, nullptr);
 }
 
-bool Process::isAlive()
-{
+bool Process::isAlive() {
     assert(is_initalized_);
     DWORD exitCode = 0;
     GetExitCodeProcess(pi_.hProcess, &exitCode);
     return exitCode == STILL_ACTIVE;
 }
 
-void Process::killProcess()
-{
-    if (is_initalized_)
-    {
-        try
-        {
+void Process::killProcess() {
+    if (is_initalized_) {
+        try {
             DWORD exitCode = 0;
             GetExitCodeProcess(pi_.hProcess, &exitCode);
-            if (exitCode == STILL_ACTIVE)
-            {
+            if (exitCode == STILL_ACTIVE) {
                 UINT uExitCode = 0;
                 TerminateProcess(pi_.hProcess, uExitCode);
             }
             // Clean up the child process resources
             closeHandles();
-        }
-        catch (const std::exception &e)
-        {
+        } catch (const std::exception &e) {
             std::cerr << e.what();
         }
     }
 }
 #else
 
-void Process::initProcess(const std::string &command)
-{
+void Process::initProcess(const std::string &command) {
     is_initalized_ = true;
     // Create input pipe
-    if (pipe(in_pipe_) == -1)
-    {
+    if (pipe(in_pipe_) == -1) {
         throw std::runtime_error("Failed to create input pipe");
     }
 
     // Create output pipe
-    if (pipe(out_pipe_) == -1)
-    {
+    if (pipe(out_pipe_) == -1) {
         throw std::runtime_error("Failed to create output pipe");
     }
 
     // Fork the current process
     pid_t forkPid = fork();
 
-    if (forkPid < 0)
-    {
+    if (forkPid < 0) {
         throw std::runtime_error("Failed to fork process");
     }
 
     // If this is the child process, set up the pipes and start the engine
-    if (forkPid == 0)
-    {
+    if (forkPid == 0) {
         // Redirect the child's standard input to the read end of the output pipe
-        if (dup2(out_pipe_[0], 0) == -1)
-            throw std::runtime_error("Failed to duplicate outpipe");
+        if (dup2(out_pipe_[0], 0) == -1) throw std::runtime_error("Failed to duplicate outpipe");
 
-        if (close(out_pipe_[0]) == -1)
-            throw std::runtime_error("Failed to close outpipe");
+        if (close(out_pipe_[0]) == -1) throw std::runtime_error("Failed to close outpipe");
 
         // Redirect the child's standard output to the write end of the input pipe
-        if (dup2(in_pipe_[1], 1) == -1)
-            throw std::runtime_error("Failed to duplicate inpipe");
+        if (dup2(in_pipe_[1], 1) == -1) throw std::runtime_error("Failed to duplicate inpipe");
 
-        if (close(in_pipe_[1]) == -1)
-            throw std::runtime_error("Failed to close inpipe");
+        if (close(in_pipe_[1]) == -1) throw std::runtime_error("Failed to close inpipe");
 
         // Execute the engine
         if (execl(command.c_str(), command.c_str(), (char *)NULL) == -1)
             throw std::runtime_error("Failed to execute engine");
 
         _exit(0); /* Note that we do not use exit() */
-    }
-    else
-    {
+    } else {
         process_pid_ = forkPid;
     }
 }
 
-Process::~Process()
-{
-    killProcess();
-}
+Process::~Process() { killProcess(); }
 
-void Process::writeProcess(const std::string &input)
-{
+void Process::writeProcess(const std::string &input) {
     assert(is_initalized_);
 
-    if (!isAlive())
-    {
+    if (!isAlive()) {
         throw std::runtime_error("IProcess is not alive and write occured with message: " + input);
     }
 
     // Write the input and a newline to the output pipe
-    if (write(out_pipe_[1], input.c_str(), input.size()) == -1)
-    {
+    if (write(out_pipe_[1], input.c_str(), input.size()) == -1) {
         throw std::runtime_error("Failed to write to pipe");
     }
 }
-std::vector<std::string> Process::readProcess(std::string_view last_word, int64_t timeoutThreshold)
-{
+std::vector<std::string> Process::readProcess(std::string_view last_word,
+                                              int64_t timeout_threshold) {
     assert(is_initalized_);
 
     // Disable blocking
@@ -302,59 +258,46 @@ std::vector<std::string> Process::readProcess(std::string_view last_word, int64_
     pollfds[0].events = POLLIN;
 
     // Set up the timeout for poll
-    int timeoutMillis = timeoutThreshold;
-    if (timeoutMillis <= 0)
-    {
-        timeoutMillis = -1; // wait indefinitely
+    int timeoutMillis = timeout_threshold;
+    if (timeoutMillis <= 0) {
+        timeoutMillis = -1;  // wait indefinitely
     }
 
     // Continue reading output lines until the line matches the specified line or a timeout occurs
-    while (true)
-    {
+    while (true) {
         const int ret = poll(pollfds, 1, timeoutMillis);
 
-        if (ret == -1)
-        {
+        if (ret == -1) {
             throw std::runtime_error("Error: poll() failed");
-        }
-        else if (ret == 0)
-        {
+        } else if (ret == 0) {
             // timeout
             lines.emplace_back(currentLine);
             timeout_ = true;
             break;
-        }
-        else if (pollfds[0].revents & POLLIN)
-        {
+        } else if (pollfds[0].revents & POLLIN) {
             // input available on the pipe
             const int bytesRead = read(in_pipe_[0], buffer, sizeof(buffer));
 
-            if (bytesRead == -1)
-            {
+            if (bytesRead == -1) {
                 throw std::runtime_error("Error: read() failed");
             }
 
             // Iterate over each character in the buffer
-            for (int i = 0; i < bytesRead; i++)
-            {
+            for (int i = 0; i < bytesRead; i++) {
                 // If we encounter a newline, add the current line to the vector and reset the
                 // currentLine
-                if (buffer[i] == '\n')
-                {
+                if (buffer[i] == '\n') {
                     // dont add empty lines
-                    if (!currentLine.empty())
-                    {
+                    if (!currentLine.empty()) {
                         lines.emplace_back(currentLine);
-                        if (currentLine.rfind(last_word, 0) == 0)
-                        {
+                        if (currentLine.rfind(last_word, 0) == 0) {
                             return lines;
                         }
                         currentLine = "";
                     }
                 }
                 // Otherwise, append the character to the current line
-                else
-                {
+                else {
                     currentLine += buffer[i];
                 }
             }
@@ -364,26 +307,20 @@ std::vector<std::string> Process::readProcess(std::string_view last_word, int64_
     return lines;
 }
 
-bool Process::isAlive()
-{
+bool Process::isAlive() {
     assert(is_initalized_);
     int status;
 
     const pid_t r = waitpid(process_pid_, &status, WNOHANG);
-    if (r == -1)
-    {
+    if (r == -1) {
         throw std::runtime_error("Error: waitpid() failed");
-    }
-    else
-    {
+    } else {
         return r == 0;
     }
 }
 
-void Process::killProcess()
-{
-    if (is_initalized_)
-    {
+void Process::killProcess() {
+    if (is_initalized_) {
         close(in_pipe_[0]);
         close(in_pipe_[1]);
         close(out_pipe_[0]);
@@ -392,8 +329,7 @@ void Process::killProcess()
         int status;
         pid_t r = waitpid(process_pid_, &status, WNOHANG);
 
-        if (r == 0)
-        {
+        if (r == 0) {
             kill(process_pid_, SIGKILL);
             wait(NULL);
         }
@@ -401,4 +337,4 @@ void Process::killProcess()
 }
 
 #endif
-} // namespace Communication
+}  // namespace Communication

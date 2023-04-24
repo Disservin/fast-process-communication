@@ -8,12 +8,10 @@
 #include <windows.h>
 #endif
 
-namespace Communication
-{
+namespace Communication {
 
-class IProcess
-{
-  public:
+class IProcess {
+   public:
     virtual ~IProcess() = default;
 
     // Initialize the engine process
@@ -22,14 +20,12 @@ class IProcess
     // Returns true if the engine process is alive
     virtual bool isAlive() = 0;
 
-    bool timeout() const
-    {
-        return timeout_;
-    }
+    bool timeout() const { return timeout_; }
 
-  protected:
+   protected:
     // Read engine's stdout until the line matches last_word or timeout is reached
-    virtual std::vector<std::string> readProcess(std::string_view last_word, int64_t timeout_threshold) = 0;
+    virtual std::vector<std::string> readProcess(std::string_view last_word,
+                                                 int64_t timeout_threshold) = 0;
 
     // Write input to the engine's stdin
     virtual void writeProcess(const std::string &input) = 0;
@@ -40,9 +36,8 @@ class IProcess
 
 #ifdef _WIN64
 
-class Process : public IProcess
-{
-  public:
+class Process : public IProcess {
+   public:
     ~Process() override;
 
     void initProcess(const std::string &command) override;
@@ -50,11 +45,12 @@ class Process : public IProcess
 
     void killProcess();
 
-  protected:
-    std::vector<std::string> readProcess(std::string_view last_word, int64_t timeout_threshold) override;
+   protected:
+    std::vector<std::string> readProcess(std::string_view last_word,
+                                         int64_t timeout_threshold) override;
     void writeProcess(const std::string &input) override;
 
-  private:
+   private:
     void closeHandles();
 
     PROCESS_INFORMATION pi_;
@@ -64,9 +60,8 @@ class Process : public IProcess
 
 #else
 
-class Process : public IProcess
-{
-  public:
+class Process : public IProcess {
+   public:
     ~Process() override;
 
     void initProcess(const std::string &command) override;
@@ -74,15 +69,16 @@ class Process : public IProcess
 
     void killProcess();
 
-  protected:
-    std::vector<std::string> readProcess(std::string_view last_word, int64_t timeout_threshold) override;
+   protected:
+    std::vector<std::string> readProcess(std::string_view last_word,
+                                         int64_t timeout_threshold) override;
     void writeProcess(const std::string &input) override;
 
-  private:
+   private:
     pid_t process_pid_;
     int in_pipe_[2], out_pipe_[2];
 };
 
 #endif
 
-} // namespace Communication
+}  // namespace Communication

@@ -4,6 +4,10 @@ This is a simple C++ implementation to start a process and communicate with it.
 
 ## Usage
 
+C++17
+
+You can use the single header file from the SHL directory.
+
 Create a class which inherits the Process class. Easiest example:
 
 ```cpp
