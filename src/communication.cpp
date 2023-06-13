@@ -15,6 +15,7 @@
 #include <sys/types.h>  // pid_t
 #include <sys/wait.h>
 #include <unistd.h>  // _exit, fork
+#include <sys/prctl.h> // prctl
 #endif
 
 namespace Communication {
@@ -203,6 +204,11 @@ void Process::initProcess(const std::string &command) {
 
     // If this is the child process, set up the pipes and start the engine
     if (forkPid == 0) {
+        // This sets the PR_SET_PDEATHSIG option, which specifies the signal that should be
+        // sent to the child process if its parent terminates.
+        if (prctl(PR_SET_PDEATHSIG, SIGTERM) == -1)
+            throw std::runtime_error("Failed to set PR_SET_PDEATHSIG");
+
         // Redirect the child's standard input to the read end of the output pipe
         if (dup2(out_pipe_[0], 0) == -1) throw std::runtime_error("Failed to duplicate outpipe");
 
